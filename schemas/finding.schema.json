@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "finding.schema.json",
+  "title": "Static security hypothesis and evidence",
+  "type": "object",
+  "required": ["id", "title", "status", "hypothesis", "attacker", "preconditions", "invariant", "chain", "source_refs", "counterevidence", "impact", "uncertainties", "review", "next_action"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "status": {"enum": ["hypothesis", "source-supported", "conditional", "rejected", "merged", "needs-evidence"]},
+    "hypothesis": {"type": "string", "minLength": 1},
+    "attacker": {"type": "string", "minLength": 1},
+    "preconditions": {"type": "array", "items": {"type": "string"}},
+    "invariant": {"type": "string", "minLength": 1},
+    "chain": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "transition", "requires", "controls", "evidence_indices", "status"],
+        "properties": {
+          "from": {"type": "string", "minLength": 1},
+          "to": {"type": "string", "minLength": 1},
+          "transition": {"type": "string", "minLength": 1},
+          "requires": {"type": "array", "items": {"type": "string"}},
+          "controls": {"type": "array", "items": {"type": "string"}},
+          "evidence_indices": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+          "status": {"enum": ["observed", "conditional", "unknown"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "source_refs": {"type": "array", "items": {"$ref": "source-ref.schema.json"}},
+    "counterevidence": {"type": "array", "items": {"type": "string"}},
+    "impact": {
+      "type": "object",
+      "required": ["scope", "statement", "runtime_verified", "conditions"],
+      "properties": {
+        "scope": {"type": "string", "minLength": 1},
+        "statement": {"type": "string", "minLength": 1},
+        "runtime_verified": {"const": false},
+        "conditions": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "uncertainties": {"type": "array", "items": {"type": "string"}},
+    "review": {
+      "type": "object",
+      "required": ["status", "reviewer", "model", "conclusion"],
+      "properties": {
+        "status": {"enum": ["pending", "reviewed"]},
+        "reviewer": {"type": ["string", "null"]},
+        "model": {"type": ["string", "null"]},
+        "conclusion": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "next_action": {"type": "string", "minLength": 1},
+    "merged_into": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "source-supported"}}},
+      "then": {
+        "properties": {
+          "chain": {"minItems": 1},
+          "source_refs": {"minItems": 1},
+          "review": {"properties": {"status": {"const": "reviewed"}}}
+        }
+      }
+    },
+    {"if": {"properties": {"status": {"const": "merged"}}}, "then": {"required": ["merged_into"]}}
+  ],
+  "additionalProperties": true,
+  "$comment": "Schema validates records, not vulnerability semantics. Extensions are permitted for system-specific evidence."
+}

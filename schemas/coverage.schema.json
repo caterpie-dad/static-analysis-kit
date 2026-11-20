@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coverage.schema.json",
+  "type": "object",
+  "required": ["schema_version", "units"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "locator", "status", "questions", "source_refs", "rationale", "next_action"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "minLength": 1},
+          "locator": {"type": "string", "minLength": 1},
+          "status": {"enum": ["reviewed", "partial", "unreviewed", "blocked", "excluded"]},
+          "questions": {"type": "array", "items": {"type": "string"}},
+          "source_refs": {"type": "array", "items": {"$ref": "source-ref.schema.json"}},
+          "rationale": {"type": "string"},
+          "next_action": {"type": "string"}
+        },
+        "allOf": [
+          {"if": {"properties": {"status": {"const": "reviewed"}}}, "then": {"properties": {"questions": {"minItems": 1}, "source_refs": {"minItems": 1}}}},
+          {"if": {"properties": {"status": {"enum": ["blocked", "excluded"]}}}, "then": {"properties": {"rationale": {"minLength": 1}}}},
+          {"if": {"properties": {"status": {"enum": ["partial", "unreviewed"]}}}, "then": {"properties": {"next_action": {"minLength": 1}}}}
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
