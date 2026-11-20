@@ -1,0 +1,10 @@
+schema_version = 1
+
+# The reserved alias inherit leaves native model selection unset.
+[roles]
+inventory = "inherit"
+analyst = "inherit"
+reviewer = "inherit"
+
+[delegation]
+max_concurrent = 3

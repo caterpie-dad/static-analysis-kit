@@ -1,9 +1,20 @@
 # 공식 자료와 유지보수
 
-구성 작성 기준일: 2026-11-20, Asia/Seoul. 호스트에서 확인한 CLI는 `0.164.0-alpha.11.1`이다. 이 키트가 모든 과거·미래 클라이언트에 같은 설정 구문을 보장하지 않는다. 실행할 때 현재 CLI 도움말과 공식 문서를 확인한다.
+문서 확인 기준일: 2026-11-20, Asia/Seoul. 어댑터는 확인한 설정 형식을 사용하며 모든 과거·미래 클라이언트에 같은 구문을 보장하지 않는다. 실행할 때 설치된 CLI 버전·도움말·설정 로딩 결과를 확인한다. 초기 작성 환경에서 확인한 Codex CLI 버전은 `0.164.0-alpha.11.1`이었다. 이는 Codex에 한정된 환경 기록이며 다른 클라이언트의 버전이나 현재 실행 검증을 뜻하지 않는다.
 
 | 자료 | 이 키트에서 확인한 사항 |
 | --- | --- |
+| [Agent Skills 명세](https://agentskills.io/specification) | 공통 SKILL.md 형식, 환경 요구사항 메타데이터와 상대 참조 |
+| [Claude Code 지침](https://code.claude.com/docs/en/memory#agents-md) | AGENTS.md 직접 로딩 조건과 CLAUDE.md import |
+| [Claude Code Skills](https://code.claude.com/docs/en/skills) | .claude/skills 발견과 표준·확장 필드 구분 |
+| [Claude Code 하위 에이전트](https://code.claude.com/docs/en/sub-agents) | Markdown 정의, 모델 선택과 컨텍스트·권한 |
+| [Vibe 설정](https://docs.mistral.ai/vibe/code/cli/configuration) | 프로젝트·사용자 설정, trust와 추가 디렉터리의 의미 |
+| [Vibe 에이전트](https://docs.mistral.ai/vibe/code/cli/agents) | TOML 역할 정의와 모델·도구 범위 |
+| [Vibe Skills](https://docs.mistral.ai/vibe/code/cli/skills) | .agents/skills 발견과 allowed-tools의 비강제성 |
+| [Vibe 설정 명세](https://docs.mistral.ai/vibe/code/cli/configuration-reference) | 공급자·모델 별칭과 네이티브 옵션 |
+| [OpenCode V1 에이전트 원본](https://github.com/anomalyco/opencode/blob/v1.19.6/packages/web/src/content/docs/agents.mdx) | V1 호환 agent Markdown과 모델 참조 |
+| [OpenCode V1 Skills 원본](https://github.com/anomalyco/opencode/blob/v1.19.6/packages/web/src/content/docs/skills.mdx) | .agents/skills 및 .opencode/skills 탐색 |
+| [OpenCode V1→V2 안내](https://opencode.ai/docs/migrate-v1/) | 지원 V1 설정의 호환성, V2 전용 구문·플러그인 차이 |
 | [Codex 사용자화](https://learn.chatgpt.com/docs/customization/overview) | AGENTS, skills, MCP의 역할 구분 |
 | [Skills 작성](https://learn.chatgpt.com/docs/build-skills) | `.agents/skills` 발견과 수동·자동 호출 |
 | [하위 에이전트](https://learn.chatgpt.com/docs/agent-configuration/subagents) | standalone `.codex/agents/*.toml`의 필수 필드와 모델 설정, 호스트 권한 상속 |
@@ -14,6 +25,8 @@
 | [Semgrep taint](https://docs.semgrep.dev/writing-rules/data-flow/taint-mode/overview) | source·propagator·sink와 지원 범위 |
 | [OWASP 코드 리뷰](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Code_Review_Cheat_Sheet.html) | 맥락·업무 속성·배포 검토의 중요성 |
 
-이 키트는 Dynamo의 특정 취약점이나 모델 세션 기록을 새 대상의 증거로 재사용하지 않는다. 기존 연구에서 얻은 원칙인 신뢰 가정의 코드 대조, 전제조건 명시, 반증, 전체 경로 근거, 미분석 영역 보존을 일반적인 조사 계약으로 반영했다.
+각 조사의 근거는 해당 대상의 소스·설정·버전에서 확인한다. 과거 조사 결과나 세션 기록을 참고하더라도 새 대상에 대한 사실과 판정은 별도로 검증한다.
+
+공식 문서의 설정 지원과 이 키트에서 실제 실행해 검증한 조합은 구별한다. 클라이언트·설정 형식의 버전 기준은 어댑터에, 수행한 시험과 미검증 조건은 [VALIDATION.md](../VALIDATION.md)에 기록한다.
 
 업데이트 시 특정 장애를 막기 위한 룰을 계속 덧붙이기보다 실제 실패 원인, 적용 범위, 반례를 검토해 필요한 최소 지침을 수정한다. 도구와 모델 관련 사실은 공식 자료로 다시 확인하고 변경한 근거를 이 파일과 해당 조사에 남긴다.

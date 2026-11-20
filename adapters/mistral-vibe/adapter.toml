@@ -1,0 +1,11 @@
+schema_version = 1
+client = "mistral-vibe"
+renderer = "vibe-toml"
+native_schema = "subagents-inline-instructions"
+reference_version = "3.1.3"
+checked_at = "2026-11-20"
+validation = "offline-structure-only"
+sources = ["https://docs.mistral.ai/vibe/code/cli/configuration-reference", "https://docs.mistral.ai/vibe/code/cli/agents", "https://docs.mistral.ai/vibe/code/cli/skills"]
+notes = ["Model references are aliases of presets registered in Vibe.", "Configure thinking and provider-specific model settings in the native model presets.", "Project settings and skills require trust; add-dir also loads target instructions and permits edits.", "Subagent connector, plugin, and MCP capabilities may differ from the parent."]
+
+[option_types]

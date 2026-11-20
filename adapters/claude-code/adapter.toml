@@ -1,0 +1,12 @@
+schema_version = 1
+client = "claude-code"
+renderer = "claude-markdown"
+native_schema = "project-subagents-and-skills"
+reference_version = "documentation-2026-11-20"
+checked_at = "2026-11-20"
+validation = "offline-structure-only"
+sources = ["https://code.claude.com/docs/en/sub-agents", "https://code.claude.com/docs/en/skills", "https://code.claude.com/docs/en/memory"]
+notes = ["A generated CLAUDE.md imports the shared AGENTS.md; existing user files are never overwritten.", "Effort support depends on the selected model and client version."]
+
+[option_types]
+effort = "string"

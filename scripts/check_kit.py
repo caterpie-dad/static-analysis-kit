@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -32,10 +33,11 @@ REQUIRED_FILES = (
     "AGENTS.md",
     "SECURITY.md",
     ".agents/skills/system-static-analysis/SKILL.md",
-    ".codex/config.toml",
-    ".codex/agents/static-analyst.toml",
-    ".codex/agents/static-inventory.toml",
-    ".codex/agents/static-reviewer.toml",
+    "kit.toml",
+    "profiles/default.toml",
+    "roles/inventory.md",
+    "roles/analyst.md",
+    "roles/reviewer.md",
     "references/investigation.md",
     "references/evidence.md",
     "references/tooling.md",
@@ -46,13 +48,15 @@ REQUIRED_FILES = (
     "scripts/workspace.py",
     "scripts/install_python_tool.py",
     "scripts/check_kit.py",
+    "scripts/runtime_config.py",
+    "scripts/configure.py",
     "schemas/run.schema.json",
     "schemas/state.schema.json",
     "schemas/source-ref.schema.json",
     "schemas/coverage.schema.json",
     "schemas/finding.schema.json",
 )
-AGENT_KEYS = ("name", "description", "developer_instructions", "model", "model_reasoning_effort")
+AGENT_KEYS = ("name", "description", "developer_instructions")
 FINDING_STATUSES = {"hypothesis", "source-supported", "conditional", "rejected", "merged", "needs-evidence"}
 COVERAGE_STATUSES = {"reviewed", "partial", "unreviewed", "blocked", "excluded"}
 EDGE_STATUSES = {"observed", "conditional", "unknown"}
@@ -70,7 +74,9 @@ class Checker:
     def __init__(self, root):
         self.root = root.resolve()
         self.errors = []
-        self.stats = {"files_checked": 0, "schemas_checked": 0, "source_refs_checked": 0}
+        self.stats = {"files_checked": 0, "schemas_checked": 0, "source_refs_checked": 0,
+                      "adapters_checked": 0, "generated_files_checked": 0}
+        self.configuration = None
 
     def error(self, path, message):
         try:
@@ -80,10 +86,12 @@ class Checker:
         self.errors.append(f"{label}: {message}")
 
     def _walk_files(self):
-        skipped = {".git", "__pycache__", ".tools", "runs"}
+        skipped = {".git", "__pycache__", ".tools", "runs", ".codex", ".claude", ".vibe", ".opencode"}
         for directory, subdirs, filenames in os.walk(self.root):
             subdirs[:] = sorted(name for name in subdirs if name not in skipped)
             for filename in filenames:
+                if filename == "CLAUDE.md":
+                    continue  # Optional local entrypoint; shared guidance lives in AGENTS.md.
                 yield Path(directory) / filename
 
     def read_json(self, path):
@@ -137,25 +145,29 @@ class Checker:
                     self.error(path, f"broken local link: {destination}")
 
     def check_toml_and_skill(self):
-        config = self.root / ".codex/config.toml"
         if tomllib is None:
-            self.error(config, "no TOML parser available; use Python 3.11 or install tomli")
+            self.error("kit.toml", "no TOML parser available; use Python 3.11 or install tomli")
             return
-        if config.is_file():
+        # Native user/generated files are outside the common-kit validation scope.
+        for relative in ("kit.toml", "profiles/default.toml"):
+            config = self.root / relative
+            if not config.is_file():
+                continue
             try:
-                self._read_toml(config)
+                data = self._read_toml(config)
             except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
                 self.error(config, f"invalid TOML ({type(exc).__name__})")
-        for path in sorted((self.root / ".codex/agents").glob("*.toml")):
-            try:
-                data = self._read_toml(path)
-            except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
-                self.error(path, f"invalid TOML ({type(exc).__name__})")
                 continue
-            for key in AGENT_KEYS:
-                if not isinstance(data.get(key), str) or not data[key].strip():
-                    self.error(path, f"agent field {key!r} must be a nonempty string")
-
+            if type(data.get("schema_version")) is not int or data.get("schema_version") != 1:
+                self.error(config, "schema_version must be 1")
+            if relative == "profiles/default.toml":
+                roles = data.get("roles")
+                if not isinstance(roles, dict):
+                    self.error(config, "roles must be a table")
+                else:
+                    for role in ("inventory", "analyst", "reviewer"):
+                        if not isinstance(roles.get(role), str) or not roles[role].strip():
+                            self.error(config, f"roles.{role} must select a nonempty alias")
         skill = self.root / ".agents/skills/system-static-analysis/SKILL.md"
         if skill.is_file():
             try:
@@ -178,6 +190,85 @@ class Checker:
                 self.error(skill, "frontmatter name must be lowercase kebab-case")
             if not values.get("description"):
                 self.error(skill, "frontmatter description is required")
+
+    def check_client_configuration(self, client, profile_path=None, override_path=None):
+        """Resolve and parse generated configuration without loading a client or calling a model."""
+        label = profile_path or "profiles/default.toml"
+        if client is None:
+            if profile_path is not None or override_path is not None:
+                self.error(label, "--profile and --override require --client")
+            return
+        if tomllib is None:
+            return  # The core parser check already reports the missing prerequisite.
+        try:
+            module_path = Path(__file__).with_name("runtime_config.py")
+            spec = importlib.util.spec_from_file_location("static_kit_runtime_configuration", module_path)
+            runtime = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = runtime
+            spec.loader.exec_module(runtime)
+            resolved = runtime.resolve_configuration(self.root, client, profile_path=profile_path,
+                                                     override_path=override_path)
+            generated = runtime.render_files(self.root, resolved)
+        except (OSError, UnicodeError, ValueError, ImportError, SyntaxError) as exc:
+            self.error(label, f"invalid client configuration: {exc}")
+            return
+        if not isinstance(generated, dict) or not generated:
+            self.error(label, "adapter must render a nonempty file mapping")
+            return
+        self.stats["adapters_checked"] += 1
+        self.configuration = {"client": client, "account_access_confirmed": False,
+                              "native_execution_verified": False}
+        self.check_generated_files(generated)
+
+    def check_generated_files(self, generated):
+        """Parse an in-memory adapter bundle, including links to other generated files."""
+        virtual = {}
+        for relative, content in generated.items():
+            if (not isinstance(relative, str) or not relative or "\\" in relative or ":" in relative
+                    or Path(relative).is_absolute() or ".." in Path(relative).parts):
+                self.error("adapter", "adapter generated an unsafe output path")
+                continue
+            if not isinstance(content, str) or not content.strip():
+                self.error(relative, "adapter generated an empty or non-text file")
+                continue
+            virtual[(self.root / relative).resolve()] = content
+            self.stats["generated_files_checked"] += 1
+            suffix = Path(relative).suffix.lower()
+            if suffix in {".json", ".toml"}:
+                try:
+                    parsed = json.loads(content) if suffix == ".json" else tomllib.loads(content)
+                    if not isinstance(parsed, dict):
+                        self.error(relative, "generated configuration must be an object")
+                    elif relative.startswith(".codex/agents/"):
+                        for key in AGENT_KEYS:
+                            if not isinstance(parsed.get(key), str) or not parsed[key].strip():
+                                self.error(relative, f"generated agent field {key!r} must be nonempty")
+                except (json.JSONDecodeError, ValueError) as exc:
+                    self.error(relative, f"invalid generated configuration ({type(exc).__name__})")
+            if suffix == ".md" and (Path(relative).name == "SKILL.md"
+                                     or relative.startswith(".claude/agents/")
+                                     or relative.startswith(".opencode/agents/")):
+                if not re.match(r"\A---\s*\n.+?\n---(?:\s*\n|\Z)", content, re.DOTALL):
+                    self.error(relative, "generated skill or agent is missing frontmatter")
+        for path, content in virtual.items():
+            if path.suffix.lower() != ".md":
+                continue
+            text = re.sub(r"(?ms)^\s*(```|~~~).*?^\s*\1\s*$", "", content)
+            for match in LINK_RE.finditer(text):
+                destination = match.group(1).strip()
+                if not destination or destination.startswith("#"):
+                    continue
+                if destination.startswith("<") and ">" in destination:
+                    destination = destination[1:destination.index(">")]
+                else:
+                    destination = re.split(r"\s+['\"]", destination, maxsplit=1)[0]
+                destination = ESCAPED_MARKDOWN_RE.sub(r"\1", destination)
+                parsed = urlsplit(destination)
+                if parsed.scheme or parsed.netloc or destination.startswith("/") or not parsed.path:
+                    continue
+                target = (path.parent / unquote(parsed.path)).resolve()
+                if target not in virtual and not target.exists():
+                    self.error(path, f"broken generated local link: {destination}")
 
     def check_placeholders(self):
         for path in self._walk_files():
@@ -472,33 +563,40 @@ class Checker:
                     elif merged_into == finding.get("id") or merged_into not in finding_ids:
                         self.error(label, "merged_into must identify another finding in this run")
 
-    def run(self, run_path=None):
+    def run(self, run_path=None, client=None, profile_path=None, override_path=None):
         self.check_required_files()
         self.check_markdown_links()
         self.check_toml_and_skill()
         self.check_placeholders()
         self.check_schemas()
+        self.check_client_configuration(client, profile_path, override_path)
         if run_path is not None:
             self.check_run(run_path)
-        return {
+        result = {
             "ok": not self.errors,
             "structural_checks_only": True,
             "toml_parser": TOML_PARSER_NAME,
             "summary": self.stats,
             "errors": self.errors,
         }
+        if self.configuration is not None:
+            result["configuration"] = self.configuration
+        return result
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", help="validate a run directory or its run.json")
+    parser.add_argument("--client", help="validate one optional client adapter and model profile")
+    parser.add_argument("--profile", help="model profile path (requires --client)")
+    parser.add_argument("--override", help="local profile override path (requires --client)")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parent.parent
     run_path = None
     if args.run:
         selected = Path(args.run).expanduser()
         run_path = (selected / "run.json") if selected.is_dir() else selected
-    result = Checker(root).run(run_path)
+    result = Checker(root).run(run_path, args.client, args.profile, args.override)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result["ok"] else 1
 

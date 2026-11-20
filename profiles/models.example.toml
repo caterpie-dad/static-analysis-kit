@@ -1,0 +1,36 @@
+schema_version = 1
+
+# Optional examples, not an assertion of account access or model availability.
+# Copy this file locally and replace native references with your own choices.
+[roles]
+inventory = "fast"
+analyst = "deep"
+reviewer = "deep"
+
+[clients.codex.models]
+fast = "gpt-6-luna"
+deep = "gpt-6.1-sol"
+
+[clients.codex.options.deep]
+model_reasoning_effort = "high"
+
+[clients.claude-code.models]
+fast = "haiku"
+deep = "opus"
+
+[clients.claude-code.options.deep]
+effort = "high"
+
+# These are aliases to presets you register in the native Vibe configuration.
+# Set model-specific thinking options in those presets.
+[clients.mistral-vibe.models]
+fast = "my-fast-model"
+deep = "my-deep-model"
+
+# Provider and model names are examples of locally registered references.
+[clients.opencode.models]
+fast = "company/code-fast"
+deep = "company/code-deep"
+
+[clients.opencode.options.deep]
+reasoningEffort = "high"

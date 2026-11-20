@@ -1,0 +1,14 @@
+schema_version = 1
+client = "codex"
+renderer = "codex-toml"
+native_schema = "standalone-custom-agents"
+reference_version = "0.164.0-alpha.11.1"
+checked_at = "2026-11-20"
+validation = "offline-structure-only"
+sources = ["https://learn.chatgpt.com/docs/agent-configuration/subagents", "https://learn.chatgpt.com/docs/build-skills"]
+notes = ["Custom agents inherit the parent's provider and permissions.", "Model and reasoning support must be checked in the actual session."]
+
+[option_types]
+model_reasoning_effort = "string"
+model_reasoning_summary = "string"
+model_verbosity = "string"

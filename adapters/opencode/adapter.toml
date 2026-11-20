@@ -1,0 +1,15 @@
+schema_version = 1
+client = "opencode"
+renderer = "opencode-markdown"
+native_schema = "v1-compatible-agent-files"
+reference_version = "1.19.6"
+checked_at = "2026-11-20"
+validation = "offline-structure-only"
+sources = ["https://github.com/anomalyco/opencode/blob/v1.19.6/packages/web/src/content/docs/agents.mdx", "https://github.com/anomalyco/opencode/blob/v1.19.6/packages/web/src/content/docs/skills.mdx", "https://opencode.ai/docs/migrate-v1/"]
+notes = ["Generate V1-compatible agent Markdown; do not replace opencode.json or install plugins.", "V2-native configuration and plugins have different contracts; runtime compatibility is unverified.", "Provider and model references must already be registered in the selected project."]
+
+[option_types]
+reasoningEffort = "string"
+textVerbosity = "string"
+temperature = "number"
+top_p = "number"

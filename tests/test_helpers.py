@@ -105,10 +105,10 @@ class WorkspaceChecks(unittest.TestCase):
 class CapabilityChecks(unittest.TestCase):
     def test_catalog_metadata_not_account_access(self):
         probe = module("capabilities")
-        data = {"models": [{"slug": "gpt-6-luna", "supported_reasoning_levels": [
+        data = {"models": [{"slug": "vendor/model-next", "supported_reasoning_levels": [
             {"effort": "high", "description": "description is not an ID"}, "medium"]}]}
         self.assertEqual(probe._model_records(data), [{
-            "identifiers": ["gpt-6-luna"], "supported_reasoning_levels": ["high", "medium"]}])
+            "identifiers": ["vendor/model-next"], "supported_reasoning_levels": ["high", "medium"]}])
         with tempfile.TemporaryDirectory() as temp:
             cache = Path(temp) / "cache.json"
             cache.write_text("not JSON")

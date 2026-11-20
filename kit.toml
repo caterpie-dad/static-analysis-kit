@@ -1,0 +1,20 @@
+schema_version = 1
+name = "system-static-analysis"
+default_profile = "profiles/default.toml"
+clients = ["codex", "claude-code", "mistral-vibe", "opencode"]
+
+[runtime]
+python_minimum = "3.10"
+python_recommended = "3.11"
+toml_parser = "tomllib, tomli, or an existing pip._vendor.tomli"
+
+[roles]
+inventory = "roles/inventory.md"
+analyst = "roles/analyst.md"
+reviewer = "roles/reviewer.md"
+
+[dependencies]
+policy = "Install selected analysis tools only; record exact versions and artifact hashes per run."
+client_installation = "Use the client's official distribution and existing authentication."
+model_configuration = "Reference models already registered with the selected client."
+extensions = "Optional plugins and MCP servers retain their own package locks, commits, or image digests."
