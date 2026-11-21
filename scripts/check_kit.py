@@ -29,10 +29,12 @@ except ImportError:
 
 REQUIRED_FILES = (
     "README.md",
+    "install.sh",
     "START_HERE.md",
     "AGENTS.md",
     "SECURITY.md",
     ".agents/skills/system-static-analysis/SKILL.md",
+    ".agents/skills/static-analysis-kit/SKILL.md",
     "kit.toml",
     "profiles/default.toml",
     "roles/inventory.md",
@@ -40,20 +42,28 @@ REQUIRED_FILES = (
     "roles/reviewer.md",
     "references/investigation.md",
     "references/evidence.md",
+    "references/completion.md",
+    "references/cwe-catalogs.json",
     "references/tooling.md",
     "references/model-routing.md",
+    "references/agent-interface.md",
     "references/sources.md",
     "templates/REPORT.md",
     "scripts/capabilities.py",
     "scripts/workspace.py",
+    "scripts/review_contract.py",
     "scripts/install_python_tool.py",
     "scripts/check_kit.py",
     "scripts/runtime_config.py",
+    "scripts/kit_paths.py",
+    "scripts/install.py",
+    "scripts/manage.py",
     "scripts/configure.py",
     "schemas/run.schema.json",
     "schemas/state.schema.json",
     "schemas/source-ref.schema.json",
     "schemas/coverage.schema.json",
+    "schemas/review-plan.schema.json",
     "schemas/finding.schema.json",
 )
 AGENT_KEYS = ("name", "description", "developer_instructions")
@@ -168,28 +178,28 @@ class Checker:
                     for role in ("inventory", "analyst", "reviewer"):
                         if not isinstance(roles.get(role), str) or not roles[role].strip():
                             self.error(config, f"roles.{role} must select a nonempty alias")
-        skill = self.root / ".agents/skills/system-static-analysis/SKILL.md"
-        if skill.is_file():
-            try:
-                text = skill.read_text(encoding="utf-8")
-            except (OSError, UnicodeError) as exc:
-                self.error(skill, f"cannot read skill ({type(exc).__name__})")
-                return
-            frontmatter = re.match(r"\A---\s*\n(.*?)\n---(?:\s*\n|\Z)", text, re.DOTALL)
-            if not frontmatter:
-                self.error(skill, "missing YAML frontmatter")
-                return
-            values = {}
-            for line in frontmatter.group(1).splitlines():
-                found = re.match(r"^(name|description):\s*(.*?)\s*$", line)
-                if found:
-                    values[found.group(1)] = found.group(2).strip().strip("\"'")
-            if not values.get("name"):
-                self.error(skill, "frontmatter name is required")
-            elif not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", values["name"]):
-                self.error(skill, "frontmatter name must be lowercase kebab-case")
-            if not values.get("description"):
-                self.error(skill, "frontmatter description is required")
+        for skill in sorted((self.root / ".agents/skills").glob("*/SKILL.md")):
+            if skill.is_file():
+                try:
+                    text = skill.read_text(encoding="utf-8")
+                except (OSError, UnicodeError) as exc:
+                    self.error(skill, f"cannot read skill ({type(exc).__name__})")
+                    continue
+                frontmatter = re.match(r"\A---\s*\n(.*?)\n---(?:\s*\n|\Z)", text, re.DOTALL)
+                if not frontmatter:
+                    self.error(skill, "missing YAML frontmatter")
+                    continue
+                values = {}
+                for line in frontmatter.group(1).splitlines():
+                    found = re.match(r"^(name|description):\s*(.*?)\s*$", line)
+                    if found:
+                        values[found.group(1)] = found.group(2).strip().strip("\"'")
+                if not values.get("name"):
+                    self.error(skill, "frontmatter name is required")
+                elif not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", values["name"]):
+                    self.error(skill, "frontmatter name must be lowercase kebab-case")
+                if not values.get("description"):
+                    self.error(skill, "frontmatter description is required")
 
     def check_client_configuration(self, client, profile_path=None, override_path=None):
         """Resolve and parse generated configuration without loading a client or calling a model."""
@@ -354,7 +364,7 @@ class Checker:
             self.error(label, "claim must be a nonempty string")
         self.stats["source_refs_checked"] += 1
 
-    def check_run(self, run_path):
+    def check_run(self, run_path, require_ready=False):
         run_path = run_path.resolve()
         run_dir = run_path.parent
         run = self.read_json(run_path)
@@ -450,11 +460,16 @@ class Checker:
                     questions = unit.get("questions")
                     if isinstance(questions, list) and any(not isinstance(question, str) for question in questions):
                         self.error(label, "questions items must be strings")
+                    if isinstance(questions, list) and (not questions or any(
+                            not isinstance(question, str) or not question.strip() for question in questions)):
+                        self.error(label, "review units require concrete nonempty questions before analysis")
                     if unit_status == "reviewed":
                         if not isinstance(questions, list) or not questions:
                             self.error(label, "reviewed units require nonempty questions")
                         if not isinstance(refs, list) or not refs:
                             self.error(label, "reviewed units require nonempty source_refs")
+                        if not isinstance(unit.get("rationale"), str) or not unit["rationale"].strip():
+                            self.error(label, "reviewed units require an explanation of semantic/path review")
                     if unit_status in {"blocked", "excluded"} and not (isinstance(unit.get("rationale"), str) and unit["rationale"].strip()):
                         self.error(label, "blocked/excluded units require rationale")
                     if unit_status in {"partial", "unreviewed"} and not (isinstance(unit.get("next_action"), str) and unit["next_action"].strip()):
@@ -492,6 +507,8 @@ class Checker:
                     if not isinstance(finding.get(key), list):
                         self.error(label, f"{key} must be an array")
                 refs = finding.get("source_refs")
+                if not isinstance(refs, list) or not refs:
+                    self.error(label, "every finding/candidate requires concrete source_refs; keep unsupported leads in notes")
                 if isinstance(refs, list):
                     for ref_index, ref in enumerate(refs):
                         self._source_ref(ref, roots, f"{label}.source_refs[{ref_index}]")
@@ -516,6 +533,8 @@ class Checker:
                             if isinstance(values, list) and any(not isinstance(value, str) for value in values):
                                 self.error(edge_label, f"{key} items must be strings")
                         indices = edge.get("evidence_indices")
+                        if edge_status == "observed" and not indices:
+                            self.error(edge_label, "observed chain edges require code evidence_indices")
                         if isinstance(indices, list):
                             for evidence_index in indices:
                                 if (not isinstance(evidence_index, int) or isinstance(evidence_index, bool)
@@ -563,7 +582,36 @@ class Checker:
                     elif merged_into == finding.get("id") or merged_into not in finding_ids:
                         self.error(label, "merged_into must identify another finding in this run")
 
-    def run(self, run_path=None, client=None, profile_path=None, override_path=None):
+                if isinstance(state, dict) and state.get("status") == "complete":
+                    if status in {"hypothesis", "needs-evidence"} or not isinstance(review, dict) or review.get("status") != "reviewed":
+                        self.error(label, "complete cannot retain unresolved/unreviewed candidates")
+                    try:
+                        report = (run_dir / "REPORT.md").read_text(encoding="utf-8")
+                        if not isinstance(finding.get("id"), str) or finding["id"] not in report or any(
+                                not isinstance(ref, dict) or not isinstance(ref.get("path"), str)
+                                or ref["path"] not in report or not isinstance(ref.get("sha256"), str)
+                                or ref["sha256"] not in report for ref in (refs if isinstance(refs, list) else [])):
+                            self.error(label, "REPORT.md must include finding ID, code paths and full source hashes")
+                    except (OSError, UnicodeError):
+                        self.error(label, "complete requires a readable REPORT.md")
+
+        contract_path = self.root / "scripts/review_contract.py"
+        if not contract_path.is_file():
+            self.error(contract_path, "completion checker is unavailable")
+            return
+        spec = importlib.util.spec_from_file_location("static_kit_review_contract", contract_path)
+        contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(contract)
+        contract.check_contract(self, run_dir, roots, coverage, state if isinstance(state, dict) else {}, require_ready)
+        if isinstance(state, dict) and state.get("status") == "complete":
+            try:
+                report = (run_dir / "REPORT.md").read_text(encoding="utf-8")
+                if not report.strip() or "<시스템명>" in report or "> 작성 안내:" in report:
+                    self.error(run_dir / "REPORT.md", "complete requires a finished report, not the initial template")
+            except (OSError, UnicodeError):
+                self.error(run_dir / "REPORT.md", "complete requires a readable report")
+
+    def run(self, run_path=None, client=None, profile_path=None, override_path=None, require_ready=False):
         self.check_required_files()
         self.check_markdown_links()
         self.check_toml_and_skill()
@@ -571,7 +619,7 @@ class Checker:
         self.check_schemas()
         self.check_client_configuration(client, profile_path, override_path)
         if run_path is not None:
-            self.check_run(run_path)
+            self.check_run(run_path, require_ready)
         result = {
             "ok": not self.errors,
             "structural_checks_only": True,
@@ -587,6 +635,7 @@ class Checker:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", help="validate a run directory or its run.json")
+    parser.add_argument("--require-ready", action="store_true", help="require stack/catalog/applicability and AI/CPU preparation before analysis")
     parser.add_argument("--client", help="validate one optional client adapter and model profile")
     parser.add_argument("--profile", help="model profile path (requires --client)")
     parser.add_argument("--override", help="local profile override path (requires --client)")
@@ -596,7 +645,9 @@ def main(argv=None):
     if args.run:
         selected = Path(args.run).expanduser()
         run_path = (selected / "run.json") if selected.is_dir() else selected
-    result = Checker(root).run(run_path, args.client, args.profile, args.override)
+    if args.require_ready and run_path is None:
+        parser.error("--require-ready requires --run")
+    result = Checker(root).run(run_path, args.client, args.profile, args.override, args.require_ready)
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0 if result["ok"] else 1
 

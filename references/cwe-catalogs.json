@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "releases": {
+    "5.0": {
+      "url": "https://cwe.mitre.org/data/xml/cwec_v5.0.xml.zip",
+      "xml_sha256": "47165a9593def89c69b9ef50c34d99ac68db55df8373613e85e9cc9ceecefb1d",
+      "weaknesses": 984,
+      "verified_at": "2026-11-21",
+      "verification": "Full MITRE HTTPS catalog downloaded independently during kit maintenance; raw XML bytes and weakness count pinned outside investigation records."
+    }
+  }
+}

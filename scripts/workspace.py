@@ -9,6 +9,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import io
 import os
 import re
 import shutil
@@ -17,10 +18,16 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
+from urllib.request import urlopen
+
+from review_contract import FULL_CWE_URL, digest, snapshot, verified_cwe_catalog
+from kit_paths import runtime_paths
 
 
 KIT_ROOT = Path(__file__).resolve().parent.parent
+RUNS_ROOT, TOOLS_ROOT = runtime_paths(KIT_ROOT)
 ROOT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
 
 
@@ -53,7 +60,7 @@ def validate_root_id(value):
 
 
 def check_output_location(output, source):
-    if within(output, source) and not within(output, KIT_ROOT / "runs"):
+    if within(output, source) and not within(output, RUNS_ROOT):
         raise ValueError("output cannot be inside a source root except under the toolkit's runs directory")
 
 
@@ -153,7 +160,7 @@ def initialize(args):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", target.name).strip("-.")[:60] or "target"
     run_id = "{}-{}-{}".format(slug, stamp, uuid.uuid4().hex[:8])
-    requested_output = Path(args.output).expanduser() if args.output else KIT_ROOT / "runs" / run_id
+    requested_output = Path(args.output).expanduser() if args.output else RUNS_ROOT / run_id
     if requested_output.exists() or requested_output.is_symlink():
         raise ValueError("output already exists; choose a new investigation directory")
     output = requested_output.resolve()
@@ -170,9 +177,19 @@ def initialize(args):
     write_json(output / "state.json", {"schema_version": 1, "status": "active",
                "next_actions": [], "blockers": [], "updated_at": created})
     write_json(output / "coverage.json", {"schema_version": 1, "units": []})
+    write_json(output / "review-plan.json", {
+        "schema_version": 1, "phase": "preparing", "stack": [], "catalogs": [],
+        "weaknesses": [], "resources": [], "tasks": [
+            {"id": "source-accounting", "executor": "cpu", "purpose": "Enumerate/hash every target file",
+             "method": "workspace.py snapshot", "status": "done",
+             "result_paths": ["evidence/source-inventory.json"]},
+            {"id": "stack-and-weaknesses", "executor": "ai", "purpose": "Interpret stack, applicability and controls",
+             "method": "source/configuration review with pinned full CWE and stack documentation",
+             "status": "planned", "result_paths": []}]})
+    capture_snapshot(output, {"primary": target})
     documents = {
         "RUN.md": "# 정적 보안 조사\n\n- 조사 ID: {}\n- 생성 시점: {}\n- 모드: static-only\n- 소스 루트 primary: {}\n\n조사 범위와 배포 조건은 검토 대기 상태다. 초기화는 소스 검토가 아니다.\n".format(run_id, created, target),
-        "CHECKPOINT.md": "# 조사 체크포인트\n\n상태: active. 초기 작업 공간만 생성했다.\n\n## 다음 작업\n\n- 소스 목록과 범위를 확인한다.\n- 아키텍처와 보안 불변조건을 근거로 모델링한다.\n- 검토 단위를 coverage.json에 명시한다.\n\n## 차단·미확인\n\n아직 조사하지 않았으므로 배포 조건·권한 경계·결함 여부는 미확인이다.\n",
+        "CHECKPOINT.md": "# 조사 체크포인트\n\n상태: active. 전체 소스 스냅샷을 작성했으며 의미 검토는 아직 시작하지 않았다.\n\n## 다음 작업\n\n- 전체 목록의 읽기 실패·바이너리·심볼릭 링크를 확인한다.\n- 기술 스택, 전체 CWE와 스택별 보안 자료, AI/CPU 역할을 review-plan.json에 기록한다.\n- 필요한 자료·도구를 다운로드하고 준비 검사를 통과한다.\n- 모든 소스 구간과 보안 경로를 coverage.json에서 검토한다.\n\n## 차단·미확인\n\n배포 조건·권한 경계·결함 여부는 아직 조사하지 않았다. 100% 목록화는 100% 분석 완료가 아니다.\n",
         "architecture.md": "# 아키텍처 모델\n\n상태: pending. 구성 요소·흐름·실행 문맥·신뢰 경계는 아직 검토하지 않았다.\n\n사실, 가정, 추론과 소스 참조를 구분해 갱신한다.\n",
         "threat-model.md": "# 위협 모델\n\n상태: pending. 행위자·초기 능력·자산·보안 불변조건·권한 전환은 아직 검토하지 않았다.\n\n배포 상태를 추측하거나 검토 공백을 안전으로 처리하지 않는다.\n",
     }
@@ -198,7 +215,106 @@ def add_root(args):
     record = root_record(root_id, source)
     metadata["source_roots"].append(record)
     write_json(run / "run.json", metadata)
+    capture_snapshot(run, {r["id"]: Path(r["path"]) for r in metadata["source_roots"]})
+    invalidate_preparation(run)
     print(json.dumps(record, ensure_ascii=False))
+
+
+def invalidate_preparation(run):
+    plan_path = run / "review-plan.json"
+    if not plan_path.exists():
+        # Upgrade legacy runs without inventing stack decisions or prior review.
+        write_json(plan_path, {"schema_version": 1, "phase": "preparing", "stack": [],
+                              "catalogs": [], "weaknesses": [], "tasks": [], "resources": []})
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["phase"] = "preparing"
+    write_json(run / "review-plan.json", plan)
+    state = json.loads((run / "state.json").read_text(encoding="utf-8"))
+    if state.get("status") == "complete":
+        state.update(status="active", updated_at=utc_now(),
+                     next_actions=["Reassess changed scope, stack and review evidence"])
+        write_json(run / "state.json", state)
+
+
+def capture_snapshot(run, roots):
+    evidence = run / "evidence"
+    if evidence.is_symlink() or not evidence.is_dir():
+        raise ValueError("evidence must be an existing directory, not a symlink")
+    destination = evidence / "source-inventory.json"
+    if destination.is_symlink():
+        raise ValueError("source inventory cannot be a symlink")
+    result = snapshot(roots, (run, RUNS_ROOT, TOOLS_ROOT))
+    if destination.exists():
+        old = destination.read_bytes()
+        history = evidence / "inventory-history"
+        if history.is_symlink():
+            raise ValueError("snapshot history cannot be a symlink")
+        history.mkdir(exist_ok=True)
+        archive = history / (digest(old) + ".json")
+        if not archive.exists():
+            write_json(archive, json.loads(old))
+    write_json(destination, result)
+    return result
+
+
+def refresh_snapshot(args):
+    run, metadata = load_run(args.run)
+    result = capture_snapshot(run, {r["id"]: Path(r["path"]) for r in metadata["source_roots"]})
+    invalidate_preparation(run)
+    print(json.dumps({"files": len(result["entries"]), "errors": len(result["errors"]),
+                      "complete_enumeration": result["complete_enumeration"]}))
+
+
+def load_cwe(args):
+    run, _ = load_run(args.run)
+    invalidate_preparation(run)
+    url = args.url
+    if FULL_CWE_URL.fullmatch(url) is None:
+        raise ValueError("use an official full cwec XML/ZIP URL; CWE views and Top-N subsets are insufficient")
+    if args.xml:
+        payload = Path(args.xml).read_bytes()
+    else:
+        with urlopen(url, timeout=30) as response:
+            if FULL_CWE_URL.fullmatch(response.geturl()) is None:
+                raise ValueError("unexpected CWE download redirect")
+            payload = response.read(64 * 1024 * 1024 + 1)
+        if len(payload) > 64 * 1024 * 1024:
+            raise ValueError("CWE download exceeds 64 MiB")
+    data = payload
+    if payload.startswith(b"PK"):
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            members = [m for m in archive.infolist() if m.filename.lower().endswith(".xml")]
+            if len(members) != 1 or members[0].file_size > 128 * 1024 * 1024:
+                raise ValueError("expected one CWE XML document under 128 MiB")
+            data = archive.read(members[0])
+    version, rows = verified_cwe_catalog(data, KIT_ROOT)
+    tools = run / "tools"
+    if tools.is_symlink() or not tools.is_dir():
+        raise ValueError("tools must be an existing directory, not a symlink")
+    name = "cwe-{}.xml".format(digest(data))
+    destination = tools / name
+    if destination.is_symlink():
+        raise ValueError("catalog artifact cannot be a symlink")
+    destination.write_bytes(data)
+    plan = json.loads((run / "review-plan.json").read_text(encoding="utf-8"))
+    plan["catalogs"] = [{"id": "cwe", "version": version, "url": url,
+                         "path": "tools/" + name, "sha256": digest(data),
+                         "download_sha256": digest(payload), "retrieved_at": utc_now()}]
+    plan["weaknesses"] = [dict(row, applicability="pending", rationale="", stack_ids=[],
+                               status="pending", coverage_unit_ids=[]) for row in rows]
+    tasks = plan.get("tasks", [])
+    if not isinstance(tasks, list):
+        raise ValueError("review plan tasks must be an array")
+    plan["tasks"] = [task for task in tasks if not isinstance(task, dict) or task.get("id") != "cwe-catalog"]
+    plan["tasks"].append({"id": "cwe-catalog", "executor": "cpu",
+                          "purpose": "Download/import and parse all CWE weaknesses",
+                          "method": "workspace.py cwe", "status": "done",
+                          "result_paths": ["tools/" + name]})
+    plan["phase"] = "preparing"
+    write_json(run / "review-plan.json", plan)
+    invalidate_preparation(run)
+    print(json.dumps({"version": version, "weaknesses": len(rows), "sha256": digest(data),
+                      "phase": "preparing"}))
 
 
 def inventory(args):
@@ -209,7 +325,7 @@ def inventory(args):
         raise ValueError("run evidence must be an existing directory, not a symlink")
     entries, excluded, errors = [], [], []
     truncated = False
-    skip_paths = {run, KIT_ROOT / "runs", KIT_ROOT / ".tools"}
+    skip_paths = {run, RUNS_ROOT, TOOLS_ROOT}
 
     def relative(path):
         return Path(path).relative_to(source).as_posix()
@@ -323,6 +439,14 @@ def main(argv=None):
     command.add_argument("--id", required=True)
     command.add_argument("--path", required=True)
     command.set_defaults(action=add_root)
+    command = commands.add_parser("snapshot", help="hash the entire source scope; archive the previous manifest")
+    command.add_argument("--run", required=True)
+    command.set_defaults(action=refresh_snapshot)
+    command = commands.add_parser("cwe", help="download/import the full official CWE XML and seed all weakness mappings")
+    command.add_argument("--run", required=True)
+    command.add_argument("--url", default="https://cwe.mitre.org/data/xml/cwec_latest.xml.zip")
+    command.add_argument("--xml", help="already downloaded full XML or ZIP; URL records its official origin")
+    command.set_defaults(action=load_cwe)
     command = commands.add_parser("inventory", help="enumerate metadata without reading source contents")
     command.add_argument("--run", required=True)
     command.add_argument("--root", default="primary")
@@ -340,7 +464,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         args.action(args)
-    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, zipfile.BadZipFile) as error:
         if isinstance(error, json.JSONDecodeError):
             message = "malformed JSON workspace metadata"
         elif isinstance(error, UnicodeError):

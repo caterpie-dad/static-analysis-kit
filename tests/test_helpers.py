@@ -21,7 +21,11 @@ KIT = Path(__file__).resolve().parents[1]
 def module(name):
     spec = importlib.util.spec_from_file_location(name, KIT / "scripts" / f"{name}.py")
     loaded = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(loaded)
+    sys.path.insert(0, str(KIT / "scripts"))
+    try:
+        spec.loader.exec_module(loaded)
+    finally:
+        sys.path.pop(0)
     return loaded
 
 

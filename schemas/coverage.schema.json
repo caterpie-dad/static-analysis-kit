@@ -5,6 +5,21 @@
   "required": ["schema_version", "units"],
   "properties": {
     "schema_version": {"const": 1},
+    "empty_files": {"$ref": "#/properties/non_source_files"},
+    "non_source_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["root_id", "path", "sha256", "rationale", "reviewer"],
+        "properties": {
+          "root_id": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "rationale": {"type": "string", "minLength": 1},
+          "reviewer": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "units": {
       "type": "array",
       "items": {
@@ -15,13 +30,13 @@
           "kind": {"type": "string", "minLength": 1},
           "locator": {"type": "string", "minLength": 1},
           "status": {"enum": ["reviewed", "partial", "unreviewed", "blocked", "excluded"]},
-          "questions": {"type": "array", "items": {"type": "string"}},
+          "questions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
           "source_refs": {"type": "array", "items": {"$ref": "source-ref.schema.json"}},
           "rationale": {"type": "string"},
           "next_action": {"type": "string"}
         },
         "allOf": [
-          {"if": {"properties": {"status": {"const": "reviewed"}}}, "then": {"properties": {"questions": {"minItems": 1}, "source_refs": {"minItems": 1}}}},
+          {"if": {"properties": {"status": {"const": "reviewed"}}}, "then": {"properties": {"questions": {"minItems": 1}, "source_refs": {"minItems": 1}, "rationale": {"minLength": 1}}}},
           {"if": {"properties": {"status": {"enum": ["blocked", "excluded"]}}}, "then": {"properties": {"rationale": {"minLength": 1}}}},
           {"if": {"properties": {"status": {"enum": ["partial", "unreviewed"]}}}, "then": {"properties": {"next_action": {"minLength": 1}}}}
         ],

@@ -29,7 +29,7 @@
         "additionalProperties": true
       }
     },
-    "source_refs": {"type": "array", "items": {"$ref": "source-ref.schema.json"}},
+    "source_refs": {"type": "array", "minItems": 1, "items": {"$ref": "source-ref.schema.json"}},
     "counterevidence": {"type": "array", "items": {"type": "string"}},
     "impact": {
       "type": "object",

@@ -12,5 +12,5 @@
     "updated_at": {"type": "string", "format": "date-time"}
   },
   "additionalProperties": true,
-  "$comment": "Complete refers to the agreed review scope, not a proof of vulnerability absence."
+  "$comment": "Complete requires full current-source file/line review, completed semantic review units, stack/CWE preparation and review, completed AI/CPU work and evidenced findings/report. Cross-file checks are enforced by check_kit.py; this does not prove absence of vulnerabilities."
 }

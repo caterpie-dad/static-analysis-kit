@@ -13,6 +13,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from kit_paths import runtime_paths
 import re
 import subprocess
 import sys
@@ -48,7 +49,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", required=True, help="Plain PyPI package name; no URL/extras/options")
     parser.add_argument("--version", required=True, help="Exact version selected from official distribution metadata")
-    parser.add_argument("--base", type=Path, default=KIT_ROOT / ".tools" / "python")
+    parser.add_argument("--base", type=Path, default=runtime_paths(KIT_ROOT)[1] / "python")
     parser.add_argument("--timeout", type=int, default=600, help="Maximum seconds per preparation stage")
     parser.add_argument("--plan", action="store_true", help="Print commands only; no network or writes")
     args = parser.parse_args()

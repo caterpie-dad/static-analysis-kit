@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-plan.schema.json",
+  "title": "Stack preparation, full weakness applicability and AI/CPU work",
+  "type": "object",
+  "required": ["schema_version", "phase", "stack", "catalogs", "weaknesses", "tasks", "resources"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "phase": {"enum": ["preparing", "ready"]},
+    "stack": {
+      "type": "array", "items": {
+        "type": "object", "required": ["id", "name", "version", "source_refs", "security_resources"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "version": {"type": ["string", "null"]},
+          "security_resources": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "source_refs": {"type": "array", "minItems": 1, "items": {"$ref": "source-ref.schema.json"}}
+        }
+      }
+    },
+    "catalogs": {
+      "type": "array", "items": {
+        "type": "object", "required": ["id", "path", "url", "version", "sha256"],
+        "properties": {
+          "id": {"const": "cwe"},
+          "path": {"type": "string", "minLength": 1},
+          "url": {"type": "string", "pattern": "^https://cwe[.]mitre[.]org/"},
+          "version": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "weaknesses": {
+      "type": "array", "items": {
+        "type": "object", "required": ["id", "stack_ids", "applicability", "rationale", "status", "coverage_unit_ids"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "stack_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "applicability": {"enum": ["pending", "applicable", "not-applicable"]},
+          "rationale": {"type": "string"},
+          "status": {"enum": ["pending", "reviewed", "blocked"]},
+          "coverage_unit_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "tasks": {
+      "type": "array", "items": {
+        "type": "object", "required": ["id", "executor", "purpose", "method", "status", "result_paths"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "executor": {"enum": ["ai", "cpu"]},
+          "purpose": {"type": "string", "minLength": 1},
+          "method": {"type": "string", "minLength": 1},
+          "status": {"enum": ["planned", "done", "blocked"]},
+          "result_paths": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "resources": {
+      "type": "array", "items": {
+        "type": "object", "required": ["id", "purpose", "status", "url", "path", "sha256"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pending", "available", "downloaded", "unavailable"]},
+          "url": {"type": ["string", "null"]},
+          "path": {"type": ["string", "null"]},
+          "sha256": {"type": ["string", "null"]}
+        }
+      }
+    }
+  },
+  "allOf": [{"if": {"properties": {"phase": {"const": "ready"}}}, "then": {
+    "properties": {"stack": {"minItems": 1}, "catalogs": {"minItems": 1}, "weaknesses": {"minItems": 1}, "tasks": {"minItems": 2}}
+  }}],
+  "additionalProperties": true,
+  "$comment": "The CPU checker verifies the pinned catalog, source bytes, IDs, preparation and completion gates. Applicability and security judgments still require AI/source review."
+}

@@ -4,13 +4,15 @@
 
 ## 능력 확인과 설치
 
-`scripts/capabilities.py --output RUN_ROOT/tools/capabilities.json`으로 로컬 명령과 선택한 클라이언트의 공개 모델 카탈로그 메타데이터를 조사한다. 버전 조회는 대상 폴더 밖에서 실행한다. 발견된 실행 파일이 없다고 기능 전체가 불가능하다고 단정하지 말고 다른 도구·표준 라이브러리·소스 독해를 검토한다.
+`scripts/capabilities.py --output RUN_ROOT/tools/capabilities.json`으로 로컬 명령과 선택한 클라이언트의 공개 모델 카탈로그 메타데이터를 조사한다. 버전 조회는 대상 폴더 밖에서 실행한다. 필요한 도구·자료가 없으면 공식 인터넷 출처에서 다운로드·설치한다. 단순히 설치돼 있지 않다는 이유로 해당 분석을 생략하지 않는다. 다운로드 실패 시 실제 원인을 기록하고 다른 도구·표준 라이브러리·소스 독해로 같은 질문을 해결할 수 있는지 검토한다.
 
 기본 실행은 모델 캐시를 자동으로 읽지 않는다. `--client CLIENT`로 선택한 클라이언트를 명시하고, 공개 모델 메타데이터를 제공할 때는 `--model-catalog PATH`를 사용한다. 이 파일은 모델 ID·공급자·지원 옵션만 담은 카탈로그여야 하며 인증·전체 클라이언트 설정 파일을 입력하지 않는다. 모델 목록 파싱, 현재 세션 모델, 실제 접근 확인은 구별한다. 기존 `--model-cache`는 해당 클라이언트 전용 캐시 형식의 호환 입력으로만 사용한다.
 
 설치할 때 해결할 질문, 선택 이유, 공식 배포처, 버전, 설치 경로, 다운로드 아티팩트 해시, 실제 실행 명령, 적용 범위, 결과 파일과 실패·누락을 `tools/`에 남긴다. 공식 문서의 현재 방법을 확인하며 스니펫이나 기억만으로 CLI 옵션을 만들어내지 않는다. 라이선스와 운영체제 지원도 확인한다.
 
-기본 위치는 `KIT_ROOT/.tools/`다. Python 도구는 다음 헬퍼로 독립 venv에 설치할 수 있다. `PACKAGE`와 `VERSION`은 공식 배포처에서 확인한 정확한 값으로 치환한다.
+작업은 [AI/CPU 역할 규칙](completion.md)에 따라 `review-plan.json.tasks[]`로 배분한다. 파일·해시·카탈로그 파싱·AST·정적 데이터 흐름·질의·누락 검사는 CPU에서 수행하고, 스택별 적용성·업무 요구사항·경로·반증·영향의 판단은 AI 모델이 담당한다. 다운로드할 필요 자료·도구는 `resources[]`에 출처·로컬 아티팩트 또는 설치 manifest와 해시를 연결한다. 전체 CWE는 `workspace.py cwe --run RUN_ROOT`로 준비할 수 있다. 준비되지 않은 필수 항목이 있으면 준비·완료 상태로 표시하지 않는다.
+
+도구의 기본 위치는 설치본의 `.installation.json`이 가리키는 `data_root/tools`, checkout의 `KIT_ROOT/.tools/`다. 설치본에서는 같은 메타데이터의 `python` 절대 경로로 아래 헬퍼를 실행한다. Python 도구는 다음 헬퍼로 독립 venv에 설치할 수 있다. `PACKAGE`와 `VERSION`은 공식 배포처에서 확인한 정확한 값으로 치환한다.
 
 ```bash
 python3 KIT_ROOT/scripts/install_python_tool.py --package PACKAGE --version VERSION --plan
